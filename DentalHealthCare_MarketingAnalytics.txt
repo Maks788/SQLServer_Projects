@@ -133,8 +133,6 @@ FROM (
 			       WHEN ApptDAteInt IS NOT NULL 
                                     AND ApptDateInt >=  CONVERT(INT,CONVERT(CHAR(8), GETDATE(), 112))  
                                THEN 'Pending' 	
-
- 			      --WHEN ApptDateInt is not null AND DoctorPerformanceMTDSnapshotDateKey is null  then 'NoShow'	
 		 																																																																																																																																																													
    			       WHEN ApptDateInt IS NULL 
                                     AND DoctorPerformanceMTDSnapshotDateKey IS NOT NULL 
