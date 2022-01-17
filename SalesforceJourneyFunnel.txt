@@ -1,0 +1,205 @@
+DECLARE @delimiter VARCHAR(50)
+SET @delimiter=';'  -- <=== Here, you can change the delimiter.
+
+-- ===============================================================================================================================
+-- Author     : Susi Mak
+-- Create date: 07/10/2020
+-- Description: Creates Salesforce Journey Funnel, including manipulating XML files
+
+-- Change History:
+--   mm/dd/yy Name: NA
+-- ===============================================================================================================================
+
+;WITH CTE1_OtherDay AS
+( 
+    SELECT distinct [Message_Type]
+	 , Salesforce_Contact_ID
+         , Journey_Action_Date
+    FROM  Patcomm.EXT.MKTCLD_Contact_Engagement_Transactions CEN
+    WHERE Journey_Name not in ('Onboarding_SameDay_Audience' )	
+),
+
+CTE1_SameDay as
+( 
+    SELECT distinct [Message_Type]
+         , Salesforce_Contact_ID
+         , Journey_Action_Date
+    FROM  Patcomm.EXT.MKTCLD_Contact_Engagement_Transactions CEN
+    WHERE Journey_Name in ('Onboarding_SameDay_Audience' )	
+),
+
+CTE2_OtherDay AS
+(
+    SELECT [Message_Type]
+	 , Salesforce_Contact_ID
+	 , Journey_Action_Date
+         , CAST('<M>' + REPLACE([Message_Type], @delimiter , '</M><M>') + '</M>' AS XML) AS [Message_Type XML]
+    FROM CTE1_OtherDay
+),
+
+CTE2_SameDay AS
+(
+    SELECT [Message_Type]
+         , Salesforce_Contact_ID
+         , Journey_Action_Date
+         , CAST('<M>' + REPLACE([Message_Type], @delimiter , '</M><M>') + '</M>' AS XML) AS [Message_Type XML]
+    FROM CTE1_SameDay
+),
+
+CTE3_OtherDay AS
+(
+    SELECT  [Message_Type]
+          , Salesforce_Contact_ID
+          , Journey_Action_Date
+          , [Message_Type XML].value('/M[1]', 'varchar(50)') AS [Att_Timezone]
+	  , [Message_Type XML].value('/M[2]', 'varchar(50)') AS [Att_IsConfirmed]
+          , [Message_Type XML].value('/M[3]', 'varchar(50)') AS [Att_ChannelPreference
+    	  , [Message_Type XML].value('/M[4]', 'varchar(50)') AS [Att_SendType]
+    FROM CTE2_OtherDay
+) ,
+
+CTE3_SameDay AS
+(
+    SELECT  [Message_Type]
+          , Salesforce_Contact_ID
+          , Journey_Action_Date
+	  , [Message_Type XML].value('/M[1]', 'varchar(50)') AS [Att_Timezone]
+	  , [Message_Type XML].value('/M[4]', 'varchar(50)') AS [Att_IsConfirmed]
+	  , [Message_Type XML].value('/M[2]', 'varchar(50)') AS [Att_ChannelPreference
+	  , [Message_Type XML].value('/M[3]', 'varchar(50)') AS [Att_SendType]
+    FROM CTE2_SameDay
+)
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+SELECT
+      Journey_Name
+    , Journey_ACtion_Name
+    , Message_Type
+    , Att_TimeZone
+    , Att_IsConfirmed
+    , Att_ChannelPreference
+    , Att_SendType
+    , Journey_Action_Date
+    , count(1) Record_Count
+FRom (
+       SELECT
+		CASE WHEN LEFT(AEN.Journey_Name,6) = 'Ad Hoc' 
+                     THEN 'Ad Hoc' 
+                     ELSE AEN.Journey_Name 
+                     END AS 'Journey_Name'
+
+	       , AEN.Journey_Action_Name
+	       , AEN.Message_Type
+	       --,CTE3_OtherDay.Message_Type CEN_Message_Type
+	       , CTE3_OtherDay.[Att_Timezone]
+	       , CTE3_OtherDay.[Att_IsConfirmed]
+	       , CTE3_OtherDay.[Att_ChannelPreference]
+	       , CTE3_OtherDay.[Att_SendType]  
+	       , CAST(AEN.Journey_Action_Date AS DATE) Journey_Action_Date
+	       , count(1) AS 'Record_Count'
+	       , GLCode
+	       , Region
+	       , StoreID 
+	
+	FROM Patcomm.ext.MKTCLD_Appointment_Engagement AEN with (nolock) 	
+	LEFT JOIN CTE3_OtherDay
+	       ON AEN.Message_Type = CTE3_OtherDay.Message_Type AND AEN.Salesforce_Contact_ID = CTE3_OtherDay.Salesforce_Contact_ID 
+	LEFT JOIN [pdxprodsql01\appprod].location.dbo.vwLocations v WITH (NOLOCK)
+	       ON v.clinic_id=left(AEN.Interdent_Appointment_ID,3) AND v.Location_ID=AEN.location_id
+	LEFT JOIN Patcomm.MKT.Stores STO WITH (NOLOCK) 
+	       ON v.Clinic_ID = STO.ClinicID AND v.Location_ID = STO.LocationID 
+   
+	WHERE
+	    AEN.Journey_Action_Date >= DATEADD(DAY,-83, GETDATE())				
+	    AND AEN.Journey_Name in (-- 'Onboarding_Journey_Audience'
+				     --,'Onboarding_SameDay_Audience'
+				     --,'Onboarding_New_Appointment_Audience'
+				       'ApptRem_1Day_Audience'
+				     , 'ApptRem_2Day_Audience'
+				     , 'ApptRem_7Day_Audience'
+				     --,'COVID_ReOpen_Missed_Appointments'
+				    )
+	    AND LEFT(AEN.Journey_Name,6) <> 'Ad Hoc'
+	    AND AEN.Journey_Name <> 'New Day Transactions' 
+	
+	GROUP BY 
+		CASE WHEN LEFT(AEN.Journey_Name,6) = 'Ad Hoc' THEN 'Ad Hoc' ELSE AEN.Journey_Name END
+	      , AEN.Journey_Action_Name
+	      , AEN.Message_Type
+	      , AEN.Salesforce_Contact_ID
+	      , CTE3_OtherDay.[Att_Timezone]
+	      , CTE3_OtherDay.[Att_IsConfirmed]
+	      , CTE3_OtherDay.[Att_ChannelPreference]
+	      , CTE3_OtherDay.[Att_SendType]   
+	      , AEN.Journey_Action_Date 
+	      , GLCode
+	      , Region
+	      , StoreID 
+	
+	UNION ALL
+	
+	SELECT
+	        CASE WHEN LEFT(AEN.Journey_Name,6) = 'Ad Hoc' T
+                     THEN 'Ad Hoc' 
+                     ELSE AEN.Journey_Name 
+                     END AS 'Journey_Name'
+	      , AEN.Journey_Action_Name
+	      , CTE3_SameDay.Message_Type 
+	      , CTE3_SameDay.[Att_Timezone]
+	      , CTE3_SameDay.[Att_IsConfirmed]
+	      , CTE3_SameDay.[Att_ChannelPreference]
+	      , CTE3_SameDay.[Att_SendType] 
+	      , CAST(AEN.Journey_Action_Date AS DATE) Journey_Action_Date
+	      , count(1) AS 'Record_Count'
+	      , GLCode
+	      , Region
+	      , StoreID 	
+	FROM
+		Patcomm.ext.MKTCLD_Appointment_Engagement AEN with (nolock) 	
+	LEFT JOIN CTE3_SameDay
+	       ON AEN.Salesforce_Contact_ID = CTE3_SameDay.Salesforce_Contact_ID AND AEN.Journey_Action_Date = CTE3_SameDay.Journey_Action_DAte  
+	LEFT JOIN [pdxprodsql01\appprod].location.dbo.vwLocations v WITH (NOLOCK)
+	       ON v.clinic_id=left(AEN.Interdent_Appointment_ID,3) AND v.Location_ID=AEN.location_id
+	LEFT JOIN Patcomm.MKT.Stores STO WITH (NOLOCK) 
+	       ON v.Clinic_ID = STO.ClinicID AND v.Location_ID = STO.LocationID    
+	WHERE
+	      AEN.Journey_Action_Date >= DATEADD(DAY,-83, GETDATE())	
+	      AND AEN.Journey_Name in (
+				  	-- 'Onboarding_Journey_Audience'
+					'Onboarding_SameDay_Audience'
+					--'Onboarding_New_Appointment_Audience'
+					--,'ApptRem_1Day_Audience'
+					--,'ApptRem_2Day_Audience'
+					--,'ApptRem_7Day_Audience'
+					--,'COVID_ReOpen_Missed_Appointments'
+	                               )
+	      AND LEFT(AEN.Journey_Name,6) <> 'Ad Hoc'
+	      AND AEN.Journey_Name <> 'New Day Transactions' 
+	
+	GROUP BY 
+		CASE when left(AEN.Journey_Name,6) = 'Ad Hoc' THEN 'Ad Hoc' ELSE AEN.Journey_Name ENd 
+	      , AEN.Journey_Action_Name
+	      , CTE3_SameDay.[Message_Type]		
+	      , CTE3_SameDay.[Att_Timezone]
+	      , CTE3_SameDay.[Att_IsConfirmed]
+	      , CTE3_SameDay.[Att_ChannelPreference]
+	      , CTE3_SameDay.[Att_SendType]  
+	      , AEN.Journey_Action_Date 
+	      , GLCode
+	      , Region
+	      , StoreID
+              , CTE3_SameDay.Salesforce_Contact_ID
+              , AEN.Salesforce_Contact_ID
+	) tbl 
+
+Group BY Journey_Name
+       , Journey_ACtion_Name
+       , Message_Type
+       , Att_TimeZone
+       , Att_IsConfirmed
+       , Att_ChannelPreference
+       , Att_SendType
+       , Journey_Action_Date
+
+ORDER BY Journey_Action_DAte
+       , Journey_Name
