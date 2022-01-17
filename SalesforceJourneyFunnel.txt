@@ -89,18 +89,18 @@ FRom (
                      ELSE AEN.Journey_Name 
                      END AS 'Journey_Name'
 
-		,AEN.Journey_Action_Name
-		,AEN.Message_Type
-		--,CTE3_OtherDay.Message_Type CEN_Message_Type
-		,CTE3_OtherDay.[Att_Timezone]
-		,CTE3_OtherDay.[Att_IsConfirmed]
-		,CTE3_OtherDay.[Att_ChannelPreference]
-		,CTE3_OtherDay.[Att_SendType]  
-		,CAST(AEN.Journey_Action_Date AS DATE) Journey_Action_Date
-		,count(1) AS 'Record_Count'
-		,GLCode
-		,Region
-		,StoreID 
+	      , AEN.Journey_Action_Name
+	      , AEN.Message_Type
+	      --,CTE3_OtherDay.Message_Type CEN_Message_Type
+	      , CTE3_OtherDay.[Att_Timezone]
+	      , CTE3_OtherDay.[Att_IsConfirmed]
+	      , CTE3_OtherDay.[Att_ChannelPreference]
+	      , CTE3_OtherDay.[Att_SendType]  
+	      , CAST(AEN.Journey_Action_Date AS DATE) Journey_Action_Date
+	      , count(1) AS 'Record_Count'
+	      , GLCode
+	      , Region
+	      , StoreID 
 	
 	FROM Patcomm.ext.MKTCLD_Appointment_Engagement AEN with (nolock) 	
 	LEFT JOIN CTE3_OtherDay
