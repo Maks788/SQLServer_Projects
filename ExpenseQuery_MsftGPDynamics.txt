@@ -1,0 +1,168 @@
+SELECT
+	lu.ACTINDX
+      , lu.ACTNUMBR_1
+      , lu.ACTNUMBR_2
+      , lu.ACTNUMBR_3
+      , RTRIM(gl.sourcdoc) sourcdoc
+      , gl.jrnentry
+      , RTRIM(lu.ACTDESCR) ACTDESCR
+      , gl.debitamt - gl.crdtamnt as Amount
+      , MONTH(gl.trxdate) as Month
+      , YEAR(gl.trxdate) as Year
+      , CASE WHEN RTRIM(gl.ORMSTRID) = '' THEN 'Journal Entry' ELSE RTRIM(gl.ORMSTRID) END AS ORMSTRID
+	--,pM.GLPOSTDT,[LSTDTEDT], [ORPSTDDT], [APPRVLDT], GL.DEX_ROW_TS
+      , GL.DEX_ROW_ID	
+      , RTRIM(gl.ORMSTRNM) ORMSTRNM
+      , CASE WHEN v.VNDCLDSC IS NULL AND gl.ormstrid = ''  THEN 'Journal Entry' 
+	     WHEN v.vndcldsc IS NULL AND gl.ormstrid != '' THEN RTRIM(gl.ormstrid) 
+	     ELSE RTRIM(v.VNDCLDSC) 
+        END AS VNDCLDSC
+      , RTRIM(gl.REFRENCE) REFRENCE
+      , RTRIM(gl.DSCRIPTN) DSCRIPTN
+      , CASE WHEN gl.ormstrnm = ' ' THEN RTRIM(gl.REFRENCE) ELSE RTRIM(gl.ormstrnm) END AS Explanation
+      , gl.ordocnum
+        --,pm.Batch_Number
+      , gl.ORCTRNUM 'Voucher_Number'
+      , gl.TRXSORCE
+      , gl.RCTRXSEQ
+      , CASE WHEN GL.JRNENTRY IN 
+				 (SELECT DISTINCT GL1.JRNENTRY
+	     			  FROM (SELECT ACTINDX,sourcdoc,jrnentry,debitamt,crdtamnt,ORMSTRID,ORMSTRNM,REFRENCE,DSCRIPTN,ordocnum,TRXDATE,dex_row_id,ORCTRNUM,[RCTRXSEQ],[TRXSORCE]
+			                FROM gdsc.dbo.GL20000
+			                UNION
+			                SELECT ACTINDX,sourcdoc,jrnentry,debitamt,crdtamnt,ORMSTRID,ORMSTRNM,REFRENCE,DSCRIPTN,ordocnum,TRXDATE,dex_row_id,ORCTRNUM,[RCTRXSEQ],[TRXSORCE]
+			                FROM gdsc.dbo.GL30000
+			               )GL1  
+		                  WHERE RCTRXSEQ=1 
+			                AND LEFT([TRXSORCE],5) LIKE '[A-Z][A-Z]REV' 
+		                 )
+		                AND RCTRXSEQ=1
+	     THEN 1
+	     ELSE 0
+	END AS 'Reversal Flag'			
+      , CASE WHEN GL.JRNENTRY IN 
+			        (SELECT DISTINCT GL1.JRNENTRY 
+			         FROM (SELECT ACTINDX,sourcdoc,jrnentry,debitamt,crdtamnt,ORMSTRID,ORMSTRNM,REFRENCE,DSCRIPTN,ordocnum,TRXDATE,dex_row_id,ORCTRNUM,[RCTRXSEQ],[TRXSORCE]
+			   	       FROM gdsc.dbo.GL20000
+			   	       UNION
+			               SELECT ACTINDX,sourcdoc,jrnentry,debitamt,crdtamnt,ORMSTRID,ORMSTRNM,REFRENCE,DSCRIPTN,ordocnum,TRXDATE,dex_row_id,ORCTRNUM,[RCTRXSEQ],[TRXSORCE]
+			   	       FROM gdsc.dbo.GL30000
+			   	      )GL1  
+			         WHERE RCTRXSEQ=1 
+			   	 AND LEFT([TRXSORCE],5) LIKE '[A-Z][A-Z]REV'
+			         )
+			        AND RCTRXSEQ=0
+	     THEN 1
+	     ELSE 0
+	     END AS 'Original Flag'
+															 
+       , CASE WHEN RTRIM(GL.SOURCDOC) = 'GJ' 
+	      THEN GL.TRXDATE ELSE PM.Document_Date 
+	 END AS 'DocDate'
+
+       , CASE WHEN RTRIM(GL.SOURCDOC) = 'GJ' 
+	      THEN format(GL.TRXDATE,'yyyy-MM') ELSE format(PM.Document_Date ,'yyyy-MM')
+         END AS 'DocDate_Mo' 
+
+	,gl.TRXDATE 'GL_Date'
+	,DATEADD(MONTH, DATEDIFF(MONTH, 0, gl.TRXDATE), 0) FinancialPeriod
+	,CAST(YEAR(gl.trxdate) AS VARCHAR(4)) + ' ' + RIGHT('00' + CAST(MONTH(gl.trxdate) AS VARCHAR(2)),2) 'PivYearMonth'
+	,ROW_NUMBER() OVER (ORDER BY lu.ACTINDX) row_count
+FROM   --Main GL Union
+    (SELECT ACTINDX, sourcdoc, jrnentry, debitamt, crdtamnt, ORMSTRID, ORMSTRNM, REFRENCE, DSCRIPTN, ordocnum, TRXDATE, dex_row_id
+          , ORCTRNUM, [RCTRXSEQ], [TRXSORCE], [LSTDTEDT], [ORPSTDDT], [APPRVLDT], [DEX_ROW_TS]
+     FROM gdsc.dbo.GL20000
+     UNION 
+     SELECT ACTINDX, sourcdoc, jrnentry, debitamt, crdtamnt, ORMSTRID, ORMSTRNM, REFRENCE, DSCRIPTN, ordocnum, TRXDATE,dex_row_id
+          , ORCTRNUM, [RCTRXSEQ], [TRXSORCE], [LSTDTEDT], [ORPSTDDT], [APPRVLDT], [DEX_ROW_TS]
+     FROM gdsc.dbo.GL30000
+    ) gl
+		 
+JOIN gdsc.dbo.GL00100 lu ON lu.actindx=gl.actindx
+LEFT JOIN 
+         (SELECT vm.[VENDORID],vm.[VENDNAME],vm.[VNDCLSID],vc.[VNDCLDSC] 
+          FROM [GDSC].[dbo].[PM00200] vm 
+          JOIN [GDSC].[dbo].[PM00100] vc ON vc.VNDCLSID=vm.vndclsid 
+          WHERE vc.[VNDCLSID] NOT IN ('REF1','EXP','1REF1')) v ON v.VENDORID=gl.ORMSTRID
+LEFT JOIN    --Join Query for Invoice Date from Payables Management							
+         (SELECT *
+	  FROM (
+		SELECT DISITNCT Voucher_Number,Batch_Number,Document_Date,GLPOSTDT
+                     , ROW_NUMBER() OVER(PARTITION BY Voucher_Number ORDER BY Voucher_Number DESC) AS 'RowNum'
+		FROM(
+		     SELECT 
+				RTRIM(P.VENDORID) Vendor_ID
+                              , RTRIM(PM.VENDNAME) Vendor_Name
+                              , P.BACHNUMB Batch_Number
+		              , CASE P.DOCTYPE
+		                     WHEN 1 THEN 'Invoice'
+				     WHEN 2 THEN 'Finance Charge'
+				     WHEN 3 THEN 'Misc Charge'
+				END Document_Type
+			      , P.DOCDATE Document_Date
+                              , P.VCHRNMBR Voucher_Number
+                              , RTRIM(P.DOCNUMBR) Document_Number
+                              , P.DOCAMNT Document_Amount
+                              , P.TEN99AMNT [1099_Amount]
+                              , P.TEN99BOXNUMBER [1099_Box] 
+			      , CASE P.TEN99TYPE 
+				     WHEN 1 then 'Not a 1099 Vendor'
+				     WHEN 2 then 'Dividend'
+				     WHEN 3 then 'Interest'
+				     WHEN 4 then 'Miscellaneous'
+				     WHEN 5 then 'Withholding'
+				     ELSE ''
+				END [1099_Type]
+                              , COALESCE(PA.APPLDAMT,0) Applied_Amount
+			      , COALESCE(PA.VCHRNMBR,'') Payment_Voucher_Number
+			      , COALESCE(P2.DOCNUMBR,'') Payment_Doc_Number
+			      , COALESCE(P2.DOCDATE,'1/1/1900') Payment_Date
+			      , COALESCE(PA.DATE1,'1/1/1900') Apply_Date
+			      , COALESCE(PA.GLPOSTDT, '1/1/1900') Apply_GL_Posting_Date
+			      , CASE PA.DOCTYPE
+				     WHEN 4 THEN 'Return'
+				     WHEN 5 THEN 'Credit Memo'
+				     WHEN 6 THEN 'Payment'
+				     ELSE ''
+				END Payment_Type
+			      , COALESCE(PA.POSTED, 'Unpaid') Payment_Status  
+			      , GLPOSTDT
+		     FROM
+		         (SELECT VENDORID, DOCTYPE, DOCDATE, VCHRNMBR, DOCNUMBR,DOCAMNT, VOIDED, TEN99AMNT, TEN99BOXNUMBER, TEN99TYPE,BACHNUMB
+		          FROM PM30200
+		          UNION ALL
+			  SELECT VENDORID, DOCTYPE, DOCDATE, VCHRNMBR, DOCNUMBR,DOCAMNT, VOIDED, TEN99AMNT, TEN99BOXNUMBER, TEN99TYPE,BACHNUMB
+		          FROM PM20000
+			 ) P
+                     LEFT OUTER JOIN	
+				    (SELECT VENDORID, APTVCHNM, APTODCTY, APFRDCNM, DOCTYPE,DOCDATE, APPLDAMT, VCHRNMBR, DATE1, GLPOSTDT
+                                          , CASE POSTED WHEN 0 THEN 'Unposted' ELSE 'Posted' END POSTED
+				     FROM PM10200
+				     UNION
+				     SELECT VENDORID, APTVCHNM, APTODCTY, APFRDCNM, DOCTYPE,DOCDATE, APPLDAMT, VCHRNMBR, DATE1, GLPOSTDT,'Posted' POSTED
+				     FROM PM30300
+				    ) PA
+				  ON P.VCHRNMBR = PA.APTVCHNM AND P.VENDORID = PA.VENDORID 
+                                                             AND P.DOCTYPE = PA.APTODCTY
+		     LEFT OUTER JOIN
+				    (SELECT VCHRNMBR, DOCTYPE, DOCNUMBR, DOCDATE
+				     FROM PM20000
+			  	     UNION ALL
+				     SELECT VCHRNMBR, DOCTYPE, DOCNUMBR, DOCDATE
+				     FROM PM30200
+				    ) P2
+				  ON P2.VCHRNMBR = PA.VCHRNMBR AND P2.DOCTYPE = PA.DOCTYPE
+		     LEFT OUTER JOIN PM00200 PM
+				  ON P.VENDORID = PM.VENDORID
+		     WHERE P.DOCTYPE in (1,2,3,5) --and P.VOIDED = 0
+		)PM2
+	)PM1		
+	WHERE RowNum=1 --dedup voucher numbers
+)pm on pm.Voucher_Number = gl.ORCTRNUM
+WHERE 1=1
+  AND gl.trxdate BETWEEN '2021-01-01' AND '2021-12-31'
+  AND ACTNUMBR_1 IN ('99450', '99452', '99453', '99454', '99455', '99457', '99459', '99550', '99653', '99654', '99658') 
+  AND ACTNUMBR_2 BETWEEN 3000 AND 8999
+  --and JRNENTRY = 2781233
+
+ORDER BY year, month, gl.jrnentry, gl.DEX_ROW_ID
