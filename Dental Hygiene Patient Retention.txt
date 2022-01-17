@@ -1,0 +1,151 @@
+USE [Scratch]
+GO
+
+/****** Object:  StoredProcedure [GD\Maks].[Usp_HygienePatientRecall]
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+--DROP PROCEDURE [GD\Maks].[Usp_HygienePatientRecall]
+--EXEC [GD\Maks].[Usp_HygienePatientRecall]
+
+-- =============================================
+-- Author     : Susi Mak
+-- Create date: 10/15/20
+-- Description: Creates Hygiene Retention Data Model to be used for Power BI
+
+-- Change History:
+--   mm/dd/yy Name: NA
+-- =============================================
+
+CREATE PROCEDURE [GD\Maks].[Usp_HygienePatientRecall]
+AS
+BEGIN 
+
+SET ANSI_WARNINGS On;        
+SET NOCOUNT ON;      
+
+SELECT * 
+       ,FORMAT(FirstHygVisitDate,'yyyy-MM') FirstHygVisitDate_MoYr
+       ,FORMAT(LastHygVisitDate,'yyyy-MM')  LastHygVisitDate_MoYr
+       ,FORMAT(HygVisitDAte,'yyyy-MM')      HygVisitDAte_MoYr
+       ,FORMAT(NextHygDueDate,'yyyy-MM')    NextHygDueDate_MoYr
+       ,FORMAT(NextHygVisitDate,'yyyy-MM')  NextHygVisitDate_MoYr
+FROM (
+	SELECT  ROW_NUMBER() OVER (PARTITION BY patientkey ORDER BY patientkey) UniqPat_forRevFilter
+		, GLCode,OfficeID
+		, Cliniclocationstatus
+		, ClinicLOcationName
+		, RegionCode --, patientkey	
+		, CAST(ClinicUniqueID AS VARCHAR)+'-'+CAST(PatientUniqueID AS VARCHAR) ClID_PatID
+		, AccountTypeName
+		, InsurancePlanName
+		, CAST(CAST(PatientBirthDate AS VARCHAR) AS DATE) DOB
+		, PatientAGe Age
+                , DATEDIFF(MONTH, CAST(CAST(FirstHygVisitDate AS VARCHAR) AS DATE), GETDATE() ) AS HygPatTenure
+		, CAST(CAST(FirstHygVisitDate AS VARCHAR) AS DATE) FirstHygVisitDate
+                , CAST(CAST(LastHygVisitDate AS VARCHAR) AS DATE) LastHygVisitDate 
+                , HygRevToDate
+		, Patienttransactiondatekey HygVisitDAte
+		, PatientRecallDate NextHygDueDate
+		, LEAD(PatientTransactionDateKey ,1) OVER (PARTITION BY clinicuniqueid, patientuniqueid 
+                                                               ORDER BY clinicuniqueid, patientuniqueid, PatientTransactionDateKey) NextHygVisitDate
+		, DATEDIFF(MONTH, PatientTransactionDateKey, PatientRecallDate ) 'TimeLag_BaseHygieneVisit_NextDueDate'
+		, DATEDIFF(MONTH, PatientTransactionDateKey, 
+                                  LEAD(PatientTransactionDateKey ,1) OVER (PARTITION BY clinicuniqueid, patientuniqueid 
+                                                                               ORDER BY clinicuniqueid, patientuniqueid, PatientTransactionDateKey)) 'TimeLag_BaseHygieneVisit_SubsequentVisitDate'
+		, DATEDIFF(MONTH, PatientRecallDate, 
+                                  LEAD(PatientTransactionDateKey ,1) OVER (PARTITION BY clinicuniqueid, patientuniqueid 
+                                                                               ORDER BY clinicuniqueid, patientuniqueid, PatientTransactionDateKey)) 'TimeLag_DueDate_SubsequentVisit'
+		, DATEDIFF(DAY,   PatientRecallDate, 
+                                  LEAD(PatientTransactionDateKey ,1) OVER (PARTITION BY clinicuniqueid, patientuniqueid 
+                                                                               ORDER BY clinicuniqueid, patientuniqueid, PatientTransactionDateKey) )'TimeLag_DueDate_SubsequentVisit_Days'
+		, '1' AS 'CountRecords'
+	FROM(
+	     SELECT pt.PatientKey
+		    , ClinicLocationName
+		    , GLCode
+		    , OfficeID
+		    , PatientBirthDate
+		    , PatientAge
+		    , AccountTypeName
+		    , InsurancePlanName
+		    , CAST(CAST(patienttransactiondatekey AS VARCHAR) AS DATE)  patienttransactiondatekey
+		    , HygRevToDate
+		    , patientrecalldatekey
+		    , FirstHygVisitDate
+		    , LAST_VALUE(patienttransactiondatekey) OVER (PARTITION BY pt.patientkey 
+                                                                      ORDER BY pt.patientkey) LastHygVisitDate
+		    , CASE WHEN PatientRecallDateKey IS NULL
+		           THEN DATEADD(MONTH, 6, CAST(CAST(patienttransactiondatekey AS VARCHAR) AS DATE))
+
+			   WHEN patientRecallDateKey <= LAST_VALUE(patienttransactiondatekey) OVER ( PARTITION BY pt.patientkey ORDER BY pt.patientkey)
+			   THEN DATEADD(MONTH, 6, CAST(CAST(patienttransactiondatekey AS VARCHAR) AS DATE))
+
+			   WHEN patienttransactiondatekey = LAST_VALUE(patienttransactiondatekey) OVER ( PARTITION BY pt.patientkey ORDER BY pt.patientkey)
+			   THEN CAST(CAST(patientrecalldatekey AS VARCHAR) AS DATE) 
+		           
+			   ELSE DATEADD(MONTH, 6, CAST(CAST(patienttransactiondatekey AS VARCHAR) AS DATE))
+			   END  PatientRecallDAte
+
+		    --,NewPatientFlag, RecallPatientFlag, TreatmentPatientFlag, PaymentFlag, AdjustmentFlag, chargeFlag					
+		    , pt.ClinicUniqueID
+		    , p.PatientUniqueID
+                    , QSICode
+		    , RegionCode
+                    , ClinicLocationStatus
+		    , ROW_NUMBER() OVER(PARTITION BY pt.patientkey, patienttransactiondatekey 
+                                            ORDER BY pt.patientkey,patienttransactiondatekey asc) 'RowNum'
+				
+	     FROM DentalOperationsDW.dbo.factPatientTransactions_pt pt WITH (NOLOCK)                    
+	     LEFT JOIN DentalOperationsDW.dbo.dimPatientTransactionDescriptors ptd WITH (NOLOCK) 
+                    ON pt.PatientTransactionDescriptorsKey = ptd.PatientTransactionDescriptorsKey
+	     LEFT JOIN DentalOperationsDW.dbo.dimDate d WITH (NOLOCK) 
+                    ON pt.PatientTransactionDateKey  = d.DateKey
+	     LEFT JOIN DentalOperationsDW.dbo.dimPatient p WITH (NOLOCK) 
+                    ON pt.PatientKey = p.PatientKey
+	     LEFT JOIN (SELECT DISTINCT p.PatientKey	
+			       , FIRST_VALUE(patienttransactiondatekey) OVER ( PARTITION BY pt.patientkey 
+                                                                                   ORDER BY pt.patientkey,patienttransactiondatekey) FirstHygVisitDate
+			       , SUM(TotalPatientPlusInsuranceAmount)   OVER (PARTITION BY pt.patientkey 
+                                                                                  ORDER BY pt.patientkey) HygRevToDate	
+			FROM DentalOperationsDw.dbo.dimpatient p
+			LEFT JOIN DentalOperationsDW.dbo.factPatientTransactions_pt pt WITH (NOLOCK)      
+			       ON p.PatientKey = pt.PatientKey	
+			LEFT JOIN DentalOperationsDW.dbo.dimProvider pr WITH (NOLOCK) 
+			       ON pr.ProviderKey=pt.ProviderKey
+			WHERE chargeflag = 1 AND providerPracticeTypeCode= '5' 
+                                             AND TotalPatientPlusInsuranceAmount <> 0							
+			) rev ON rev.Patientkey = p.PatientKey
+
+	     LEFT JOIN DentalOperationsDW.dbo.dimAccount a WITH (NOLOCK) 
+                    ON a.AccountKey=p.PatientAccountKey
+	     LEFT JOIN DentalOperationsDW.dbo.dimAccountType ACT 
+                    ON ACT.AccountTypeCode = A.AccountTypeCode
+	     LEFT JOIN DentalOperationsDW.dbo.dimPatientInsurance PIns 
+                    ON P.PatientKey = PIns.PatientKey AND PIns.PatientInsuranceRecordID = 1                            
+	     LEFT JOIN DentalOperationsDW.dbo.dimInsurancePlan ip 
+                    ON pins.InsurancePlanKey = ip.InsurancePlanKey             
+	     LEFT JOIN DentalOperationsDW.dbo.dimProvider pr WITH (NOLOCK) 
+                    ON pr.ProviderKey=pt.ProviderKey
+	     LEFT JOIN DentalOperationsDW.dbo.dimClinicLocation cl 
+                    ON cl.ClinicLocationKey=pt.ClinicLocationKey
+	     LEFT JOIN (SELECT patientkey,PatientRecallDateKey,ClinicKey,AccountKey
+	                  FROM [DentalOperationsDW].[dbo].[factPatientRecalls] WITH (NOLOCK)
+	                 WHERE patientkey <> -1 ) rc
+		    ON pt.patientkey = rc.patientkey
+	     WHERE 1=1 AND providerPracticeTypeCode= '5'
+		       AND chargeFlag = 1
+		       AND totalPatientPlusInsuranceAmount <> 0
+		       AND date >= '2019-01-01'
+	)a
+	WHERE 1=1 AND Rownum=1	
+) b
+--ORDER BY  ClinicUniqueID, PatientUniqueId, PatientTransactionDateKey, patientkey
+
+END
+GO
+
+
