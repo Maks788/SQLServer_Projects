@@ -1,3 +1,12 @@
+-- =============================================
+-- Author     : Susi Mak
+-- Create date: 01/15/20
+-- Description: Queries Microsoft ERP Great Plains Financials for Financial Analysis
+
+-- Change History:
+--   mm/dd/yy Name: NA
+-- =============================================
+
 SELECT
 	lu.ACTINDX
       , lu.ACTNUMBR_1
