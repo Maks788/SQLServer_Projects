@@ -5,7 +5,7 @@ SET @delimiter=';'  -- <=== Here, you can change the delimiter.
 -- Author     : Susi Mak
 -- Create date: 07/10/2020
 -- Description: Creates Salesforce Journey Funnel (1-Day, 7-Day, and Same Day Reminder), including manipulating XML files
--- Output     : See the product located at SQLServer_Images/SalesforceJourneyFunnel.png
+-- Output     : See the product located at https://github.com/Maks788/SQLServer_Images/blob/main/SalesforceJourneyFunnel.png
 
 -- Change History:
 --   mm/dd/yy Name: NA
