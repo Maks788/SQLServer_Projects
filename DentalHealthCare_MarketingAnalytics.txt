@@ -14,9 +14,11 @@ GO
 -- =============================================
 -- Author     : Susi Mak
 -- Create date: 01/15/21
--- Description: 1) Creates Marketing Analytics Data Model for the Last 25 Months to Generate Physical Table by Matching Inbound and Outbound Calls, Solution Reach CRM
+-- Goal       : 1) Creates Marketing Analytics Data Model for the Last 25 Months to Generate Physical Table by Matching Inbound and Outbound Calls, Solution Reach CRM
 --                 , Patients and Transactions, and Insurance Across Dental Data
 --              2) This Physical Table will be used for Power BI
+-- Output     : Sample of visualization can be found at https://github.com/Maks788/SQLServer_Images/blob/main/Marketing%20Metrics.PNG
+
 -- Change History:
 --   06/13/21 Susi Mak: Changed range of date to start from 01/01/19
 --   01/01/22 Susi Mak: Add new stores
