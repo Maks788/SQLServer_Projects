@@ -1,11 +1,12 @@
--- =============================================
+-- ====================================================================================================================
 -- Author     : Susi Mak
 -- Create date: 01/15/20
--- Description: Queries Microsoft ERP Great Plains Financials for Financial Analysis
-
+-- Goal       : Builds P&L from Scratch which is used to customize granularity of P&L Analysis 
+-- Code Desc. : Queries Microsoft ERP Great Plains Financials for Financial Analysis
+--
 -- Change History:
 --   mm/dd/yy Name: NA
--- =============================================
+-- ====================================================================================================================
 
 SELECT
 	lu.ACTINDX
@@ -181,3 +182,7 @@ WHERE 1=1
   --and JRNENTRY = 2781233
 
 ORDER BY year, month, gl.jrnentry, gl.DEX_ROW_ID
+
+-----------------End of Script--------------------------
+
+
